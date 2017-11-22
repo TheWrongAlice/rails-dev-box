@@ -1,22 +1,13 @@
-# The output of all these installation steps is noisy. With this utility
-# the progress report is nice and concise.
 function install {
   echo installing $1
   shift
-  apt-get -y install "$@" >/dev/null 2>&1
+  sudo apt-get -y install "$@" >/dev/null 2>&1
 }
 function gem_install {
-  echo installing $1
+	echo installing $1
   shift
-  gem install "$@" -N >/dev/null 2>&1
+  gem install "$@" >/dev/null 2>&1
 }
-
-echo adding swap file
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap defaults 0 0' >> /etc/fstab
 
 echo updating package information
 apt-add-repository -y ppa:brightbox/ruby-ng >/dev/null 2>&1
@@ -24,54 +15,60 @@ apt-get -y update >/dev/null 2>&1
 
 install 'development tools' build-essential
 
-install Ruby ruby2.4 ruby2.4-dev
-update-alternatives --set ruby /usr/bin/ruby2.4 >/dev/null 2>&1
-update-alternatives --set gem /usr/bin/gem2.4 >/dev/null 2>&1
-
-echo installing current RubyGems
-gem update --system -N >/dev/null 2>&1
+install Ruby ruby2.3 ruby2.3-dev
+update-alternatives --set ruby /usr/bin/ruby2.3 >/dev/null 2>&1
+update-alternatives --set gem /usr/bin/gem2.3 >/dev/null 2>&1
 
 gem_install Bundler bundler
+#gem_install Rails rails
 
-install Git git
-install SQLite sqlite3 libsqlite3-dev
-install Memcached memcached
 install Redis redis-server
-install RabbitMQ rabbitmq-server
-
-install PostgreSQL postgresql postgresql-contrib libpq-dev
-sudo -u postgres createuser --superuser vagrant
-sudo -u postgres createdb -O vagrant activerecord_unittest
-sudo -u postgres createdb -O vagrant activerecord_unittest2
-
-debconf-set-selections <<< 'mysql-server mysql-server/root_password password root'
-debconf-set-selections <<< 'mysql-server mysql-server/root_password_again password root'
-install MySQL mysql-server libmysqlclient-dev
-# Set the password in an environment variable to avoid the warning issued if set with `-p`.
-MYSQL_PWD=root mysql -uroot <<SQL
-CREATE USER 'rails'@'localhost';
-CREATE DATABASE activerecord_unittest  DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
-CREATE DATABASE activerecord_unittest2 DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
-GRANT ALL PRIVILEGES ON activerecord_unittest.* to 'rails'@'localhost';
-GRANT ALL PRIVILEGES ON activerecord_unittest2.* to 'rails'@'localhost';
-GRANT ALL PRIVILEGES ON inexistent_activerecord_unittest.* to 'rails'@'localhost';
-SQL
-
 install 'Nokogiri dependencies' libxml2 libxml2-dev libxslt1-dev
-install 'Blade dependencies' libncurses5-dev
 install 'ExecJS runtime' nodejs
+install Curl libcurl4-openssl-dev
+
+# Setup nginx with passenger
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 561F9B9CAC40B2F7
+install 'apt-transport-https ca-certificates' apt-transport-https ca-certificates
+
+sudo echo 'deb https://oss-binaries.phusionpassenger.com/apt/passenger trusty main' > /etc/apt/sources.list.d/passenger.list
+sudo chown root: /etc/apt/sources.list.d/passenger.list
+sudo chmod 600 /etc/apt/sources.list.d/passenger.list
+apt-get -y update >/dev/null 2>&1
+
+install nginx nginx-extras passenger
+
+sudo sed -i "s|# passenger_root|passenger_root|g" /etc/nginx/nginx.conf
+sudo sed -i "s|# include /etc/nginx/passenger.conf|include /etc/nginx/passenger.conf|g" /etc/nginx/nginx.conf
+
+sudo service nginx start
+
+# Setup database
+echo "deb http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+sudo apt-key add -
+sudo apt-get update >/dev/null 2>&1
+
+install postgres libpq-dev postgresql-9.4 postgresql-contrib-9.4
+
+# Enable remote access to postgresql
+sudo sed -i "s|#listen_addresses = 'localhost'|listen_addresses = '*'|g" /etc/postgresql/9.4/main/postgresql.conf
+sudo echo "host    all     all     0.0.0.0/0       md5" >> /etc/postgresql/9.4/main/pg_hba.conf
+
+sudo service postgresql restart
+
+#sudo -u postgres createuser --superuser vagrant
+sudo -u postgres bash -c "psql -c \"CREATE USER vagrant CREATEDB;\""
+sudo -u postgres bash -c "psql -c \"ALTER USER vagrant PASSWORD 'vagrant';\""
+sudo -u postgres bash -c "psql -c \"ALTER USER vagrant WITH SUPERUSER;\""
+
+cd /vagrant
+sudo -u vagrant bash -c "bundle"
+sudo -u vagrant bash -c "rails db:drop:all db:create:all db:migrate"
+sudo -u vagrant bash -c "rails db:migrate"
+sudo -u vagrant bash -c "rails db:seed"
 
 # Needed for docs generation.
 update-locale LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
-# Set the default directory for terminal
-echo "cd /vagrant" >> /home/ubuntu/.bashrc
-cd /vagrant
-
-echo "installing Rails"
-sudo -u ubuntu bash -c "apt install -y ruby-railties"
-sudo -u ubuntu bash -c "bundle"
-sudo -u ubuntu bash -c "rails db:drop:all db:create:all"
-sudo -u ubuntu bash -c "rails db:migrate"
-
-echo 'setup finished, have fun!'
+echo "cd /vagrant" >> /home/vagrant/.bashrc

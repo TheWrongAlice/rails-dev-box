@@ -1,18 +1,15 @@
 # The output of all these installation steps is noisy. With this utility
 # the progress report is nice and concise.
 function install {
-    echo installing $1
-    shift
-    apt-get -y install "$@" >/dev/null 2>&1
+  echo installing $1
+  shift
+  apt-get -y install "$@" >/dev/null 2>&1
 }
-
-# FIXME: This addresses an issue with Ubuntu 17.10 (Artful Aardvark). Should be
-# revisited when the base image gets upgraded.
-#
-# Workaround for https://bugs.launchpad.net/cloud-images/+bug/1726818 without
-# this the root file system size will be about 2GB.
-echo expanding root file system
-sudo resize2fs /dev/sda1
+function gem_install {
+  echo installing $1
+  shift
+  gem install "$@" -N >/dev/null 2>&1
+}
 
 echo adding swap file
 fallocate -l 2G /swapfile
@@ -34,12 +31,11 @@ update-alternatives --set gem /usr/bin/gem2.4 >/dev/null 2>&1
 echo installing current RubyGems
 gem update --system -N >/dev/null 2>&1
 
-echo installing Bundler
-gem install bundler -N >/dev/null 2>&1
+gem_install Bundler bundler
 
 install Git git
 install SQLite sqlite3 libsqlite3-dev
-install memcached memcached
+install Memcached memcached
 install Redis redis-server
 install RabbitMQ rabbitmq-server
 
@@ -65,19 +61,17 @@ install 'Nokogiri dependencies' libxml2 libxml2-dev libxslt1-dev
 install 'Blade dependencies' libncurses5-dev
 install 'ExecJS runtime' nodejs
 
-# To generate guides in Kindle format.
-install 'ImageMagick' imagemagick
-echo installing KindleGen
-kindlegen_tarball=kindlegen_linux_2.6_i386_v2_9.tar.gz
-wget -q http://kindlegen.s3.amazonaws.com/$kindlegen_tarball
-tar xzf $kindlegen_tarball kindlegen
-mv kindlegen /usr/local/bin
-rm $kindlegen_tarball
-
-install 'MuPDF' mupdf mupdf-tools
-install 'FFmpeg' ffmpeg
-
 # Needed for docs generation.
 update-locale LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
-echo 'all set, rock on!'
+# Set the default directory for terminal
+echo "cd /vagrant" >> /home/ubuntu/.bashrc
+cd /vagrant
+
+echo "installing Rails"
+sudo -u ubuntu bash -c "apt install -y ruby-railties"
+sudo -u ubuntu bash -c "bundle"
+sudo -u ubuntu bash -c "rails db:drop:all db:create:all"
+sudo -u ubuntu bash -c "rails db:migrate"
+
+echo 'setup finished, have fun!'
